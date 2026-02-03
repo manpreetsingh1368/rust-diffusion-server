@@ -54,10 +54,12 @@ impl GpuService for GpuWorker {
             .await
             .map_err(|_| Status::internal("Worker queue closed"))?;
 
-        Ok(Response::new(PromptResponse {
-            
-            response: "queued".to_string(), // ✅ Use 'response' here
-        }))
+      // no fix found yet   Ok(Response::new(PromptResponse {response: "queued".to_string(),}))
+    Ok(Response::new(PromptResponse {
+    status: "queued".to_string(),
+    ..Default::default()
+}))
+
     }
 }
 
