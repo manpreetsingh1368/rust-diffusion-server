@@ -156,7 +156,7 @@ The random pixel logic can later be replaced with:
 - VAEs
 - Neural image generators
 
----
+
 Here's how you can create a gRPC client to call the prompt and start_traning.
 
 use tonic::transport::Channel;
