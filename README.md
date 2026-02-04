@@ -158,13 +158,13 @@ The random pixel logic can later be replaced with:
 
 
 Here's how you can create a gRPC client to call the prompt and start_traning.
-
+```rust
 use tonic::transport::Channel;
 use gpu_proto::gpu_service_client::GpuServiceClient;
 use gpu_proto::{PromptRequest, TrainingRequest};
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+ #[tokio::main]
+ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut client = GpuServiceClient::connect("http://[::1]:50051").await?;
 
     // Inference request (image generation)
@@ -186,6 +186,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+```
+---
+
 Run the Server: First, run the gRPC server:
 
 cargo run
