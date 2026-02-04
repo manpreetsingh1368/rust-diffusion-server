@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // ---- gRPC server ----
-    let addr = "[::1]:50051".parse()?;
+    let addr = "0.0.0.0:50051".parse()?;
     let service = GpuWorker { tx };
 
     println!("GPU gRPC server listening on {}", addr);

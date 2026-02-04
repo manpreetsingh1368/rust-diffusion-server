@@ -1,5 +1,7 @@
-use tch::{nn, nn::ModuleT, Tensor, Kind, Device};
+use tch::{Tensor, nn, Device, Kind, Adam};
+use std::error::Error;
 
+// CrossAttention, UNetBlock, and MultiResUNet implementation (same as before)
 pub struct CrossAttention {
     pub q: nn::Linear,
     pub k: nn::Linear,
@@ -80,4 +82,44 @@ impl MultiResUNet {
         let u = self.up1.forward(&m) + d2;
         self.up2.forward(&(u + d1))
     }
+}
+
+// Training the model with random data
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
+    let device = Device::cuda_if_available();
+    let vs = nn::VarStore::new(device);
+
+    // Create model
+    let model = MultiResUNet::new(&vs.root(), 256);
+
+    // Define the optimizer
+    let mut opt = Adam::default().build(&vs, 1e-4)?;
+
+    // Create random input tensor (e.g., a 3-channel image with height and width of 64)
+    let input = Tensor::randn(&[1, 3, 64, 64], (Kind::Float, device));
+
+    // Create a random context tensor (e.g., text embedding or additional context)
+    let context = Tensor::randn(&[1, 256], (Kind::Float, device));
+
+    // Target tensor (for example purposes, we use random values)
+    let target = Tensor::randn(&[1, 3, 64, 64], (Kind::Float, device));
+
+    // Training loop
+    for epoch in 0..10 {
+        // Forward pass
+        let output = model.forward(&input, &context);
+
+        // Compute the loss (MSE)
+        let loss = output.mse_loss(&target, tch::Reduction::Mean);
+
+        // Backward pass and optimization
+        opt.zero_grad();
+        loss.backward();
+        opt.step();
+
+        println!("Epoch: {}, Loss: {}", epoch, f64::from(loss));
+    }
+
+    Ok(())
 }

@@ -11,6 +11,8 @@ message PromptRequest {
 }
 
 message PromptResponse {
-  string response = 1;
+  //string response = 1;
+  //string status = 2;
+  bytes image = 1;
   string status = 2;
 }
