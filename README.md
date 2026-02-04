@@ -157,7 +157,51 @@ The random pixel logic can later be replaced with:
 - Neural image generators
 
 ---
+Here's how you can create a gRPC client to call the prompt and start_traning.
 
+use tonic::transport::Channel;
+use gpu_proto::gpu_service_client::GpuServiceClient;
+use gpu_proto::{PromptRequest, TrainingRequest};
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut client = GpuServiceClient::connect("http://[::1]:50051").await?;
+
+    // Inference request (image generation)
+    let prompt_request = tonic::Request::new(PromptRequest {
+        prompt: "A dog running in a park".into(),
+    });
+
+    let response = client.prompt(prompt_request).await?;
+    println!("Response: {:?}", response.into_inner());
+
+    // Training request
+    let training_request = tonic::Request::new(TrainingRequest {
+        batch_size: 4,
+        epochs: 10,
+    });
+
+    let response = client.start_training(training_request).await?;
+    println!("Response: {:?}", response.into_inner());
+
+    Ok(())
+}
+Run the Server: First, run the gRPC server:
+
+cargo run
+
+
+Run the Client: In a separate terminal, run the client:
+
+cargo run --bin client
+
+Expected Workflow:
+
+Start the Server: The server will listen for gRPC requests on port 50051.
+
+Generate Image (Inference): The client sends a prompt to generate an image, and the server generates and saves the image to disk.
+
+Start Training: The client sends a request to start training. The server will start the training process in the background using the specified batch size and number of epochs.
 ```bash
 cargo run
 ```
