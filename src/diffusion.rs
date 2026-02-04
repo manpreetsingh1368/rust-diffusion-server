@@ -13,7 +13,7 @@ pub fn noise_schedule(t: i64, device: Device) -> (Tensor, Tensor, Tensor) {
     let alphas = 1.0 - &betas;
     let alpha_bar = alphas.cumprod(0, Kind::Float);
 
-    (betas, alphas, alpha_bar)
+    (betas, alphas, alpa_bar)
 }
 
 pub fn dynamic_guidance(t: i64, max_guidance: f64, min_guidance: f64, total_timesteps: i64) -> f64 {
