@@ -3,9 +3,12 @@ mod diffusion;
 mod dataset;
 
 use tonic::{transport::Server, Request, Response, Status};
-use tch::{nn, Device, Tensor, Kind, nn::VarStore, nn::OptimizerConfig};
+use tch::{nn, Device, Tensor, Kind, nn::VarStore};
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::signal::unix::{signal, SignalKind};
+use log::{info, error};
+use env_logger;
 
 use model::{MultiResUNet, inject_lora};
 use diffusion::{generate_image, noise_schedule};
@@ -25,28 +28,6 @@ struct WorkerServer {
     device: Device,
 }
 
- //#[tonic::async_trait]
-//impl GpuService for WorkerServer {
-//    async fn send_prompt(
-//        &self,
-//        request: Request<PromptRequest>,
-//    ) -> Result<Response<PromptResponse>, Status> {
-//        let prompt = request.into_inner().prompt;
-//        println!("Generating image for prompt: {}", prompt);
-
-//        let model_guard = self.model.read().await;
-//        let ctx = Tensor::zeros(&[1, 512], (Kind::Half, self.device));
- //       let (betas, alphas, alpha_bar) = noise_schedule(1000, self.device);
-//
-  //      let image = generate_image(&*model_guard, &ctx, &betas, &alphas, &alpha_bar);
-    //    let fname = format!("samples/{}.png", prompt.replace(" ", "_"));
-      //  tch::vision::image::save(&image, &fname).unwrap();
-
-        //Ok(Response::new(PromptResponse {
-            status: format!("Generated: {}", fname),
-        //}))
-    //}
-// }
 #[tonic::async_trait]
 impl GpuService for WorkerServer {
     async fn prompt(
@@ -54,7 +35,7 @@ impl GpuService for WorkerServer {
         request: Request<PromptRequest>,
     ) -> Result<Response<PromptResponse>, Status> {
         let prompt = request.into_inner().prompt;
-        println!("Generating image for prompt: {}", prompt);
+        info!("Generating image for prompt: {}", prompt);
 
         let model_guard = self.model.read().await;
         let ctx = Tensor::zeros(&[1, 512], (Kind::Half, self.device));
@@ -72,14 +53,24 @@ impl GpuService for WorkerServer {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    env_logger::init();
+
     let device = Device::Cuda(0);
 
     // Initialize model and inject LoRA
     let vs = VarStore::new(device);
     let mut model = MultiResUNet::new(&vs.root(), 512);
-    inject_lora(&mut model); // LoRA fine-tuning
+    inject_lora(&mut model);
 
     let model = Arc::new(RwLock::new(model));
+
+    // Load pre-trained model if exists
+    if let Err(e) = load_model(&vs, &model).await {
+        error!("Failed to load model: {}", e);
+    } else {
+        info!("Successfully loaded pre-trained model.");
+    }
 
     // Start async training task
     let train_model = model.clone();
@@ -106,16 +97,58 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
                 opt.backward_step(&loss);
             }
-            println!("Epoch {} finished", epoch);
+            info!("Epoch {} finished", epoch);
+
+            // Save model periodically
+            if epoch % 10 == 0 {
+                if let Err(e) = save_model(&vs, &train_model).await {
+                    error!("Error saving model: {}", e);
+                }
+            }
         }
     });
 
     // Start gRPC server for inference
     let server = WorkerServer { model, device };
-    Server::builder()
+
+    // Graceful shutdown handling
+    let mut sigterm = signal(SignalKind::terminate()).unwrap();
+    let server_future = Server::builder()
         .add_service(GpuServiceServer::new(server))
-        .serve("0.0.0.0:50052".parse()?)
-        .await?;
+        .serve("0.0.0.0:50052".parse()?);
+
+    tokio::select! {
+        _ = sigterm.recv() => {
+            info!("Received SIGTERM, shutting down gracefully...");
+        },
+        result = server_future => {
+            if let Err(e) = result {
+                error!("Server failed: {}", e);
+            }
+        }
+    }
 
     Ok(())
+}
+
+// Function to save the model
+async fn save_model(vs: &VarStore, model: &Arc<RwLock<MultiResUNet>>) -> Result<(), Box<dyn std::error::Error>> {
+    let model_guard = model.read().await;
+    let model_path = "saved_model.ot";
+    model_guard.save(vs, model_path)?;
+    info!("Model saved at {}", model_path);
+    Ok(())
+}
+
+// Function to load the model
+async fn load_model(vs: &VarStore, model: &Arc<RwLock<MultiResUNet>>) -> Result<(), Box<dyn std::error::Error>> {
+    let model_guard = model.write().await;
+    let model_path = "saved_model.ot";
+    if std::path::Path::new(model_path).exists() {
+        model_guard.load(vs, model_path)?;
+        info!("Model loaded from {}", model_path);
+        Ok(())
+    } else {
+        Err("No pre-trained model found.".into())
+    }
 }
